@@ -2,9 +2,14 @@
   "name": "comic-universe-plugin-slimeread",
   "version": "0.0.1",
   "main": "dist/index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pablovsouza/comic-universe-plugin-slimeread.git"
+  },
   "scripts": {
     "package": "rimraf --glob ./comic-universe-plugin-slimeread*.tgz && npm pack",
-    "build": "tsc"
+    "build": "tsc",
+    "postinstall": "npm run build"
   },
   "keywords": [
     "comic-universe",
