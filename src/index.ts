@@ -1,10 +1,11 @@
 import axios, { Axios } from 'axios'
 import qs from 'qs'
 import * as cheerio from 'cheerio'
-class HQNowRepoPlugin implements IRepoPluginRepository {
+class SlimeReadRepoPlugin implements IRepoPluginRepository {
   public RepoName = 'Slime Read'
   public RepoTag = 'slimeread'
   public RepoUrl = 'https://slimeread.com/'
+  private buildId = ''
 
   private axios: Axios
 
@@ -42,18 +43,29 @@ class HQNowRepoPlugin implements IRepoPluginRepository {
     return list as ComicInterface[]
   }
 
+  private getBuildId = async () => {
+    const { data } = await axios.get(this.RepoUrl)
+
+    const parsedHtml = cheerio.load(data, { xmlMode: false })
+
+    const scriptTag = parsedHtml('[type="application/json"]')
+    const jsonParsed = JSON.parse(scriptTag.text())
+
+    this.buildId = jsonParsed.buildId
+  }
+
   public methods: IRepoPluginMethods = {
     getList: async (): Promise<ComicInterface[]> => {
       let res: ComicInterface[]
 
       try {
+        if (!this.buildId) await this.getBuildId()
+
         const { data } = await this.axios.get(
-          `${this.RepoUrl}/_next/data/1721567990076/recentes.json`
+          `${this.RepoUrl}/_next/data/${this.buildId}/recentes.json`
         )
 
         const comicData = JSON.parse(data).pageProps.data.data
-
-        console.log(comicData)
 
         const list = this.ApiToAppFormatter(comicData)
 
@@ -181,4 +193,4 @@ class HQNowRepoPlugin implements IRepoPluginRepository {
   }
 }
 
-export default HQNowRepoPlugin
+export default SlimeReadRepoPlugin
