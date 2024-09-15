@@ -3,7 +3,7 @@ interface IRepoPluginMethods {
   search(input: { search: string }): Promise<IComic[]>
   getDetails(search: { [key: string]: string }): Promise<Partial<IComic>>
   getChapters(input: { siteId: string }): Promise<IChapter[]>
-  getPages?(input: { siteLink: string }): Promise<IPage[]>
+  getPages?(input: { chapter: IChapter }): Promise<IPage[]>
   downloadChapter?(input: {
     comic: IComic
     chapter: IChapter
