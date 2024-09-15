@@ -1,21 +1,23 @@
-import axios, { Axios } from 'axios'
+import axios, { AxiosInstance } from 'axios'
 import qs from 'qs'
 import * as cheerio from 'cheerio'
 class SlimeReadRepoPlugin implements IRepoPluginRepository {
   public RepoName = 'Slime Read'
   public RepoTag = 'slimeread'
   public RepoUrl = 'https://slimeread.com/'
+  private ApiUrl = 'https://ola-scrapper-to-precisando-de-gente-bora.slimeread.com:8443'
   private buildId = ''
 
-  private axios: Axios
+  private axios: AxiosInstance
 
   constructor(data: IRepoPluginRepositoryInit) {
-    this.axios = new Axios({
+    this.axios = axios.create({
       baseURL: this.RepoUrl,
       timeout: 15000,
       headers: {
         'content-type': 'application/json, text/javascript, */*; q=0.01',
-        'x-requested-with': 'XMLHttpRequest'
+        'x-requested-with': 'XMLHttpRequest',
+        'User-Agent': 'insomnia/9.3.3'
       }
     })
   }
@@ -28,7 +30,7 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
         const name = val.book_name_original
         const cover = val.book_image
         const siteId = val.book_id
-        const siteLink = siteId
+        const siteLink = val.book_name
         const type = 'manga'
 
         return {
@@ -44,14 +46,15 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
   }
 
   private getBuildId = async () => {
-    const { data } = await axios.get(this.RepoUrl)
+    const result = await this.axios.get(this.RepoUrl)
+    const data = result.data as string
 
-    const parsedHtml = cheerio.load(data, { xmlMode: false })
+    const buildIdIndex = data.indexOf('buildId') + 10
 
-    const scriptTag = parsedHtml('[type="application/json"]')
-    const jsonParsed = JSON.parse(scriptTag.text())
+    const buildIdParcial = data.substring(buildIdIndex)
 
-    this.buildId = jsonParsed.buildId
+    const buildId = buildIdParcial.substring(0, buildIdParcial.indexOf('"'))
+    this.buildId = buildId
   }
 
   public methods: IRepoPluginMethods = {
@@ -60,15 +63,11 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
 
       try {
         if (!this.buildId) await this.getBuildId()
+        const url = `${this.RepoUrl}_next/data/${this.buildId}/recentes.json`
+        const { data } = await this.axios.get(url)
 
-        const { data } = await this.axios.get(
-          `${this.RepoUrl}/_next/data/${this.buildId}/recentes.json`
-        )
-
-        const comicData = JSON.parse(data).pageProps.data.data
-
+        const comicData = data.pageProps.data.data
         const list = this.ApiToAppFormatter(comicData)
-
         res = list as ComicInterface[]
       } catch (e) {
         console.log(e)
@@ -88,11 +87,9 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
       let res: ComicInterface[]
 
       try {
-        const { data } = await this.axios.get(
-          `https://ola-scrapper-to-precisando-de-gente-bora.slimeread.com:8443/book_search/?${searchString}`
-        )
+        const { data } = await this.axios.get(`${this.ApiUrl}/book_search/?${searchString}`)
 
-        const list = this.ApiToAppFormatter(JSON.parse(data))
+        const list = this.ApiToAppFormatter(data)
 
         res = list as ComicInterface[]
       } catch (e) {
@@ -106,88 +103,27 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
     },
 
     getDetails: async (search): Promise<Partial<ComicInterface>> => {
-      const { siteLink } = search
-
-      const { data } = await this.axios.get(siteLink)
-
-      const parsedData = cheerio.load(data)
-
-      const synopsisRaw = parsedData('.boxAnimeSobreLast p').html()
-      const synopsis = synopsisRaw?.substring(synopsisRaw.indexOf(':') + 1)
-
-      const genres = JSON.stringify(
-        parsedData('.genre-list li')
-          .map((_i, item) => parsedData(item).find('a').html()?.trim())
-          .toArray()
+      const data = await this.axios.get(
+        `${this.RepoUrl}_next/data/${this.buildId}/manga/${search.siteId}/${search.siteLink}.json`
       )
-
-      const res = {
-        synopsis,
-        genres,
-        type: 'manga'
-      } as Partial<ComicInterface>
-
+      // console.log(data)
       return new Promise((resolve) => {
-        resolve(res)
+        resolve({
+          //@ts-ignore
+          synopsis: data.book_synopsis
+        })
       })
     },
 
     getChapters: async ({ siteId }): Promise<ChapterInterface[]> => {
-      const { data } = await axios.get(siteId)
-
-      const parsedData = cheerio.load(data)
-
-      const chaptersList = parsedData('.single-chapter')
-        .map(
-          (_id, val) =>
-            ({
-              siteId: parsedData(val).prop('data-id-cap'),
-              number: parsedData(val).prop('data-id-cap'),
-              siteLink: parsedData(val).find('a').prop('href'),
-              date: parsedData(val).find('small').children('small').text()
-            } as ChapterInterface)
-        )
-        .toArray()
-
       return new Promise((resolve) => {
-        resolve(chaptersList.reverse())
+        resolve([])
       })
     },
 
     getPages: async ({ siteLink }) => {
-      function base64Decrypt(data: string): string {
-        const base64String = data.substring(data.indexOf(',') + 1)
-        return Buffer.from(base64String, 'base64').toString()
-      }
-
-      let response: { filename: string; path: string }[]
-
-      try {
-        const fetchPage = await this.axios.get(siteLink)
-        const parsedPage = cheerio.load(fetchPage.data)
-        const pagesRawBase64 = parsedPage('.heading-header').next().prop('src')
-        const pagesRaw =
-          (pagesRawBase64
-            ? base64Decrypt(pagesRawBase64)
-            : parsedPage('.heading-header').next().html()) ?? ''
-
-        const pages = JSON.parse(
-          pagesRaw.substring(pagesRaw.indexOf('['), pagesRaw.indexOf(']') + 1)
-        ) as string[]
-
-        response = pages.map((page) => {
-          const filename = page.substring(page.lastIndexOf('/') + 1)
-          const path = page
-
-          return { filename, path }
-        })
-      } catch (e) {
-        console.log(e)
-        response = []
-      }
-
       return new Promise((resolve) => {
-        resolve(response)
+        resolve([])
       })
     }
   }

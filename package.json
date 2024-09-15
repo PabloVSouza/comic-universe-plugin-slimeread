@@ -6,10 +6,7 @@
   "icon": "icon.png",
   "license": "MIT",
   "description": "Plugin for supporting HQ Now as a repository",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/pablovsouza/comic-universe-plugin-slimeread.git"
-  },
+  "repository": "https://github.com/pablovsouza/comic-universe-plugin-slimeread",
   "keywords": [
     "comic-universe",
     "comic",
