@@ -2,12 +2,14 @@
 import axios, { AxiosInstance } from 'axios'
 import qs from 'qs'
 import * as zlib from 'node:zlib'
+import * as cheerio from 'cheerio'
+import { getQuickJS } from 'quickjs-emscripten'
 
 class SlimeReadRepoPlugin implements IRepoPluginRepository {
   public RepoName = 'Slime Read'
   public RepoTag = 'slimeread'
   public RepoUrl = 'https://slimeread.com/'
-  private ApiUrl = 'https://ola-scrapper-to-precisando-de-gente-bora.slimeread.com:8443'
+  private _ApiUrl = ''
   private cdnSources = {
     '2': 'https://cdn.slimeread.com/',
     '3': 'https://objects.slimeread.com/',
@@ -18,7 +20,7 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
 
   private axios: AxiosInstance
 
-  constructor(data: IRepoPluginRepositoryInit) {
+  constructor(_data: IRepoPluginRepositoryInit) {
     this.axios = axios.create({
       baseURL: this.RepoUrl,
       timeout: 15000,
@@ -30,25 +32,79 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
     })
   }
 
-  //@ts-ignore
-  private ApiToAppFormatter = (data): IComic[] => {
-    const list = data
-      //@ts-ignore
-      .map((val) => {
-        const name = val.book_name_original
-        const cover = val.book_image
-        const siteId = String(val.book_id)
-        const siteLink = val.book_name
-        const type = 'manga'
+  private ApiUrl = async () => {
+    if (!this._ApiUrl.length) await this.getApiUrlFromPage()
+    return this._ApiUrl
+  }
 
-        return {
-          name,
-          siteId,
-          siteLink,
-          cover,
-          type
-        }
-      })
+  private getApiUrlFromPage = async () => {
+    const FUNCTION_REGEX =
+      /function\s*\(\)\s*\{(?:(?!function)[\s\S])*?slimeread\.com:8443[^\}]*\}/s
+    const BASEURL_VAL_REGEX = /baseURL\s*:\s*(\w+)/
+
+    const initResponse = await this.axios.get('/')
+    if (initResponse.status !== 200) {
+      throw new Error(`HTTP error ${initResponse.status}`)
+    }
+
+    const $ = cheerio.load(initResponse.data)
+    const scriptUrl = $('script[src*="pages/_app"]').attr('src')
+    if (!scriptUrl) {
+      throw new Error('Could not find script URL')
+    }
+
+    const scriptResponse = await this.axios.get(scriptUrl)
+    if (scriptResponse.status !== 200) {
+      throw new Error(`HTTP error ${scriptResponse.status}`)
+    }
+
+    const script = scriptResponse.data
+
+    const functionMatch = FUNCTION_REGEX.exec(script)
+    if (!functionMatch) {
+      throw new Error('Could not find the function containing the API URL')
+    }
+
+    const baseUrlMatch = BASEURL_VAL_REGEX.exec(functionMatch[0])
+    if (!baseUrlMatch) {
+      throw new Error('Could not find the base URL variable')
+    }
+
+    const baseUrlVar = baseUrlMatch[1]
+    const regex = new RegExp(`let.*?${baseUrlVar}\\s*=.*?(?=,\\s*\\w\\s*=)`, 's')
+    const varBlockMatch = regex.exec(functionMatch[0])
+
+    if (!varBlockMatch) {
+      throw new Error('Could not find the variable block for the base URL')
+    }
+
+    try {
+      const quickJs = await getQuickJS()
+      const apiUrl = quickJs.evalCode(`${varBlockMatch[0]}; ${baseUrlVar}`) as string
+      const finalApiUrl = apiUrl.replace(/\/$/, '') // Remove the trailing slash
+
+      this._ApiUrl = finalApiUrl
+    } catch (error) {
+      throw new Error('Could not find API URL')
+    }
+  }
+
+  private ApiToAppFormatter = (data: IBook[]): IComic[] => {
+    const list = data.map((val) => {
+      const name = val.book_name_original
+      const cover = val.book_image
+      const siteId = String(val.book_id)
+      const siteLink = val.book_name
+      const type = 'manga'
+
+      return {
+        name,
+        siteId,
+        siteLink,
+        cover,
+        type
+      }
+    })
 
     return list as IComic[]
   }
@@ -95,7 +151,9 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
       let res: IComic[]
 
       try {
-        const { data } = await this.axios.get(`${this.ApiUrl}/book_search/?${searchString}`)
+        const apiUrl = await this.ApiUrl()
+
+        const { data } = await this.axios.get(`${apiUrl}/book_search/?${searchString}`)
 
         const list = this.ApiToAppFormatter(data)
 
@@ -117,7 +175,7 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
         }
       } = (await this.axios.get(
         `${this.RepoUrl}_next/data/${this.buildId}/manga/${search.siteId}/${search.siteLink}.json`
-      )) as BookInfoResponse
+      )) as IBookInfoSingleResponse
 
       return new Promise((resolve) => {
         resolve({
@@ -129,8 +187,9 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
     },
 
     getChapters: async ({ siteId }): Promise<IChapter[]> => {
+      const apiUrl = await this.ApiUrl()
       const { data } = (await axios.get(
-        `${this.ApiUrl}/book_cap_units_all?manga_id=${siteId}`
+        `${apiUrl}/book_cap_units_all?manga_id=${siteId}`
       )) as IChapterInfo
       const chapters = data.map(
         (val) =>
@@ -154,7 +213,8 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
     },
 
     getPages: async ({ chapter }) => {
-      const url = `${this.ApiUrl}/v2/book_cap_units?manga_id=${chapter.siteLink}&cap=${chapter.number}`
+      const apiUrl = await this.ApiUrl()
+      const url = `${apiUrl}/v2/book_cap_units?manga_id=${chapter.siteLink}&cap=${chapter.number}`
       const { data } = await axios.get(url)
 
       const byteString = data.caps.substring(data.caps.indexOf(',') + 1) as string

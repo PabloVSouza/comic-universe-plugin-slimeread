@@ -1,4 +1,4 @@
-interface BookTag {
+interface IBookTag {
   tag: {
     tag_name: string
     tag_id: number
@@ -7,19 +7,28 @@ interface BookTag {
   }
 }
 
-interface BookCategory {
+interface IBookCategory {
   cat_name: string
   cat_id: number
   cat_name_ptBR: string
   cat_nsfw: boolean
 }
 
-interface BookTemp {
-  bt_id: number
-  bt_season: string | null
+interface IBookTempCap {
+  btc_cap: number
+  btc_date_created: string
+  btc_date_updated: string
+  btc_name: string | null
+  scan: IScan
 }
 
-interface BookInfoContent {
+interface IBookTemp {
+  bt_id: number
+  bt_season: string | null
+  book_temp_caps: IBookTempCap[]
+}
+
+interface IBookInfoContent {
   type: string
   mangadexId: string
   avaiablesProviders: {
@@ -37,29 +46,29 @@ interface BookInfoContent {
   }
 }
 
-interface BookInfo {
+interface IBookInfo {
   book_info_id: number
   book_info_book_id: number
-  book_info_content: BookInfoContent
+  book_info_content: IBookInfoContent
   book_info_date_created: string
   book_info_date_updated: string
 }
 
-interface Scan {
+interface IScan {
   scan_id: number
   scan_name: string
 }
 
-interface Genre {
+interface IGenre {
   genre_name: string
 }
 
-interface Author {
+interface IAuthor {
   author_name: string
   author_id: number
 }
 
-interface Book {
+interface IBook {
   book_name_original: string
   book_name: string
   book_image: string
@@ -70,27 +79,28 @@ interface Book {
   book_date_updated: string
   book_views: number
   book_synopsis: string
-  book_publication_year: number
+  book_publication_year: number | null
   book_language_id: number | null
   book_scan_id: number
-  book_flagged: number
+  book_flagged: number | null
   book_uuid: string
   book_content_warning: number
   book_nsfw: number
   book_genre_id: number
-  scan: Scan
-  genre: Genre
-  author: Author
-  book_tag: BookTag[]
-  book_categories: BookCategory[]
-  book_temp: BookTemp[]
-  book_infos: BookInfo[]
+  scan: IScan
+  genre: IGenre
+  author: IAuthor
+  book_tag: IBookTag[]
+  book_categories: IBookCategory[]
+  book_temp: IBookTemp[]
+  book_infos: IBookInfo[]
+  book_date_created: string
 }
 
-interface PageProps {
-  book_info: Book
+interface IPageProps {
+  book_info: IBook
 }
 
-interface BookInfoResponse {
-  data: { pageProps: PageProps }
+interface IBookInfoSingleResponse {
+  data: { pageProps: IPageProps }
 }
