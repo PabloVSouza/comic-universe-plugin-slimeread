@@ -198,7 +198,8 @@ class SlimeReadRepoPlugin implements IRepoPluginRepository {
             siteLink: siteId,
             number: String(val.btc_cap),
             date: val.btc_date_updated,
-            name: val.btc_name
+            name: val.btc_name,
+            repo: this.RepoTag
           } as IChapter)
       ) as IChapter[]
 
